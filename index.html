@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Румикуб — разрешим ли стол</title>
+<style>
+/* ---------------------------------------------------------------- токены ---- */
+:root{
+  --ground:#E8EAE6; --surface:#F7F8F5; --surface-2:#EFF1ED; --surface-3:#E2E6E1;
+  --ink:#191F1D; --ink-muted:#5D6764; --rule:#D2D8D3;
+  --accent:#0E5B54; --accent-soft:#D6E4E0; --on-accent:#F7F8F5;
+  --felt:#DBE4DF; --felt-edge:#C3D0CA;
+  --tile-face:#F6F2E6; --tile-edge:#DCD5C2; --tile-lip:#FFFDF6;
+  --tile-shadow:rgba(25,31,29,.30);
+  --ok:#186B4B; --ok-soft:#D7E8DE; --bad:#9C2B25; --bad-soft:#F0DCDA;
+  /* цвета фишек — краска на костяной пластинке, одна и та же в обеих темах */
+  --tile-o:#CE7126; --tile-ch:#2A2A30; --tile-k:#BC352F; --tile-s:#1D5A9C;
+  /* те же цвета как краска по фону страницы: их светлота зависит от темы */
+  --lab-o:#B46020; --lab-ch:#2A2A30; --lab-k:#AF2F29; --lab-s:#1A5493;
+  /* пустое гнездо на полке: фишки этого вида на столе нет */
+  --slot-face:#E3E6E0; --slot-edge:#D3D8D2;
+  --shadow-panel:0 1px 0 rgba(25,31,29,.04), 0 8px 24px -18px rgba(25,31,29,.45);
+  --display:"Futura","Avenir Next","Century Gothic","Trebuchet MS",system-ui,sans-serif;
+  --ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --tw:40px;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1513; --surface:#171E1C; --surface-2:#1D2523; --surface-3:#232D2A;
+    --ink:#E7EBE7; --ink-muted:#94A19C; --rule:#2B3532;
+    --accent:#49B2A3; --accent-soft:#1B3A37; --on-accent:#0F1513;
+    --felt:#123330; --felt-edge:#1D4A45;
+    --tile-face:#EAE4D5; --tile-edge:#CBC3AE; --tile-lip:#F6F1E4;
+    --tile-shadow:rgba(0,0,0,.55);
+    --ok:#5FC492; --ok-soft:#153027; --bad:#E47366; --bad-soft:#331C1A;
+    --lab-o:#E0913F; --lab-ch:#C6CCD4; --lab-k:#E4756C; --lab-s:#75AAE2;
+    --slot-face:#232B28; --slot-edge:#2F3936;
+    --shadow-panel:0 1px 0 rgba(255,255,255,.03), 0 10px 30px -20px rgba(0,0,0,.9);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1513; --surface:#171E1C; --surface-2:#1D2523; --surface-3:#232D2A;
+  --ink:#E7EBE7; --ink-muted:#94A19C; --rule:#2B3532;
+  --accent:#49B2A3; --accent-soft:#1B3A37; --on-accent:#0F1513;
+  --felt:#123330; --felt-edge:#1D4A45;
+  --tile-face:#EAE4D5; --tile-edge:#CBC3AE; --tile-lip:#F6F1E4;
+  --tile-shadow:rgba(0,0,0,.55);
+  --ok:#5FC492; --ok-soft:#153027; --bad:#E47366; --bad-soft:#331C1A;
+  --lab-o:#E0913F; --lab-ch:#C6CCD4; --lab-k:#E4756C; --lab-s:#75AAE2;
+  --slot-face:#232B28; --slot-edge:#2F3936;
+  --shadow-panel:0 1px 0 rgba(255,255,255,.03), 0 10px 30px -20px rgba(0,0,0,.9);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--ui); font-size:15px; line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{
+  max-width:900px; margin-inline:auto; padding:clamp(18px,3.2vw,36px) clamp(14px,3vw,28px) 48px;
+  display:flex; flex-direction:column; gap:clamp(18px,2.4vw,26px);
+}
+
+/* --------------------------------------------------------------- заголовок --- */
+.eyebrow{
+  font-family:var(--display); text-transform:uppercase; letter-spacing:.16em;
+  font-size:12px; color:var(--accent); margin:0 0 6px;
+}
+h1{
+  font-family:var(--display); font-weight:600; letter-spacing:-.01em;
+  font-size:clamp(28px,5.4vw,42px); line-height:1.05; margin:0; text-wrap:balance;
+}
+.lede{margin:10px 0 0; max-width:60ch; color:var(--ink-muted)}
+
+/* ------------------------------------------------------------------ панели --- */
+.panel{
+  background:var(--surface); border:1px solid var(--rule); border-radius:4px;
+  box-shadow:var(--shadow-panel); padding:clamp(14px,2.4vw,22px);
+  display:flex; flex-direction:column; gap:14px; min-width:0;
+}
+.panel-head{display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap}
+h2{
+  font-family:var(--display); text-transform:uppercase; letter-spacing:.1em;
+  font-size:13px; font-weight:600; margin:0; color:var(--ink);
+}
+.hint{margin:0; font-size:13px; color:var(--ink-muted)}
+kbd{
+  font:inherit; font-size:12px; background:var(--surface-3); border:1px solid var(--rule);
+  border-radius:3px; padding:1px 5px;
+}
+
+/* ------------------------------------------------------------------- фишки --- */
+/* полка прокручивается сама, а не растягивает страницу (min-width:0 у flex-детей) */
+.rack{overflow-x:auto; padding-bottom:4px; min-width:0}
+@media (max-width:560px){:root{--tw:34px}}
+.rack-inner{display:flex; flex-direction:column; gap:7px; min-width:max-content}
+.rack-row{display:grid; grid-template-columns:22px repeat(13,var(--tw)); gap:6px; align-items:center}
+.row-tag{
+  font-family:var(--display); font-size:14px; font-weight:600; text-align:center;
+  color:var(--lab); text-transform:uppercase;
+}
+.rack-foot{
+  display:flex; align-items:center; gap:12px; margin-top:3px;
+  padding-top:12px; border-top:1px solid var(--rule);
+}
+.rack-foot .hint{max-width:44ch}
+
+.tile{
+  --tint:var(--ink);
+  position:relative; width:var(--tw); height:calc(var(--tw)*1.34);
+  padding:0; border:0; background:none; cursor:pointer;
+  font-family:var(--display); color:var(--tint);
+  transition:transform .12s ease, filter .12s ease;
+}
+.tile .face{
+  position:absolute; inset:0; border-radius:5px;
+  background:linear-gradient(180deg,var(--tile-lip) 0 12%,var(--tile-face) 42%,var(--tile-face) 100%);
+  border:1px solid var(--tile-edge);
+  box-shadow:0 2px 0 var(--tile-edge), 0 4px 8px -4px var(--tile-shadow);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+}
+.tile .num{font-size:calc(var(--tw)*.55); font-weight:600; line-height:1; letter-spacing:-.02em}
+.tile .dot{width:5px; height:5px; border-radius:50%; background:currentColor; opacity:.75}
+.tile svg{width:calc(var(--tw)*.6); height:calc(var(--tw)*.6); display:block}
+/* фишки нет на столе: не пластинка, а пустое гнездо полки, число — приглушённой краской */
+.tile[data-n="0"] .face{
+  background:var(--slot-face); border-color:var(--slot-edge); box-shadow:none; color:var(--lab);
+}
+.tile[data-n="0"] .num,.tile[data-n="0"] .dot,.tile[data-n="0"] svg{opacity:.72}
+.rack .tile:not([data-n="0"]) .face,#jokers .tile:not([data-n="0"]) .face{
+  outline:2px solid var(--accent); outline-offset:1px;
+}
+/* ×2 — вторая фишка, выглядывающая из-под первой (::before рисуется под .face) */
+.tile[data-n="2"]::before{
+  content:""; position:absolute; inset:0; border-radius:5px; transform:translate(4px,-4px);
+  background:var(--tile-face); border:1px solid var(--tile-edge);
+  box-shadow:0 3px 7px -4px var(--tile-shadow);
+}
+.tile .cnt{
+  position:absolute; right:-5px; bottom:-6px; min-width:17px; height:17px;
+  border-radius:9px; background:var(--accent); color:var(--on-accent);
+  font-family:var(--ui); font-size:11px; font-weight:600; line-height:17px; text-align:center;
+  padding:0 4px; box-shadow:0 1px 3px rgba(0,0,0,.3);
+}
+.tile:not([data-n="2"]) .cnt{display:none}
+.rack .tile:hover,#jokers .tile:hover{transform:translateY(-2px)}
+.tile:active{transform:translateY(1px)}
+.tile:focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:6px}
+.c-o{--tint:var(--tile-o); --lab:var(--lab-o)}
+.c-ch{--tint:var(--tile-ch); --lab:var(--lab-ch)}
+.c-k{--tint:var(--tile-k); --lab:var(--lab-k)}
+.c-s{--tint:var(--tile-s); --lab:var(--lab-s)}
+
+/* ------------------------------------------------------------------ панель управления --- */
+.bar{
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  background:var(--surface-2); border:1px solid var(--rule); border-radius:4px;
+  padding:12px 14px;
+}
+.tally{font-variant-numeric:tabular-nums; font-size:14px; margin-right:auto}
+.tally b{font-family:var(--display); font-size:19px; font-weight:600}
+.tally .sub{color:var(--ink-muted)}
+button.act{
+  font:inherit; font-size:14px; cursor:pointer; padding:8px 16px; border-radius:3px;
+  border:1px solid var(--rule); background:var(--surface); color:var(--ink);
+  transition:background .12s ease, border-color .12s ease, transform .1s ease;
+}
+button.act:hover:not(:disabled){border-color:var(--accent); color:var(--accent)}
+button.act:active:not(:disabled){transform:translateY(1px)}
+button.act.primary{
+  background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:600;
+}
+button.act.primary:hover:not(:disabled){filter:brightness(1.08); color:var(--on-accent)}
+button.act:disabled{opacity:.45; cursor:not-allowed}
+button.act:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+/* --------------------------------------------------------------- результат --- */
+.verdict{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.chip{
+  display:inline-flex; align-items:center; gap:8px; padding:5px 12px 5px 10px;
+  border-radius:3px; font-size:13px; font-weight:600;
+  border:1px solid transparent; border-left-width:4px;
+}
+.chip.yes{background:var(--ok-soft); border-color:var(--ok); color:var(--ok)}
+.chip.no{background:var(--bad-soft); border-color:var(--bad); color:var(--bad)}
+.chip.idle{background:var(--surface-2); border-color:var(--rule); color:var(--ink-muted); font-weight:400}
+.meta{font-size:13px; color:var(--ink-muted); font-variant-numeric:tabular-nums}
+
+.felt{
+  background:var(--felt); border:1px solid var(--felt-edge); border-radius:4px;
+  padding:clamp(12px,2vw,18px); display:flex; flex-direction:column; gap:12px;
+  min-height:96px;
+}
+.felt .empty{margin:auto; color:var(--ink-muted); font-size:14px; text-align:center; max-width:38ch}
+.felt .note{margin:0; color:var(--ink-muted); font-size:13px}
+.loose{display:flex; flex-wrap:wrap; gap:6px}
+.sets{display:flex; flex-direction:column; gap:12px}
+.set{
+  display:flex; flex-direction:column; gap:6px;
+  animation:rise .34s cubic-bezier(.2,.7,.3,1) both;
+}
+@keyframes rise{from{opacity:0; transform:translateY(6px)}to{opacity:1; transform:none}}
+@media (prefers-reduced-motion:reduce){
+  .set{animation:none}
+  .tile,button.act{transition:none}
+}
+.set-label{
+  font-family:var(--display); text-transform:uppercase; letter-spacing:.09em;
+  font-size:11px; color:var(--ink-muted);
+}
+.set-label b{color:var(--lab,var(--ink)); font-weight:600}
+.set-tiles{display:flex; gap:5px; flex-wrap:wrap}
+.set .tile,.loose .tile{cursor:default; --tw:38px}
+.set .tile:hover,.loose .tile:hover{transform:none}
+.tile.joker .sub{
+  position:absolute; left:0; right:0; bottom:4px;
+  font-family:var(--ui); font-size:9px; font-weight:600; text-align:center; letter-spacing:0;
+}
+.tile.joker .num{font-size:calc(var(--tw)*.46)}
+
+footer{
+  border-top:1px solid var(--rule); padding-top:16px; font-size:13px; color:var(--ink-muted);
+  display:flex; flex-direction:column; gap:6px;
+}
+footer b{color:var(--ink); font-weight:600}
+footer code{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;
+  background:var(--surface-2); border:1px solid var(--rule); border-radius:3px; padding:1px 5px;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Румикуб</p>
+    <h1>Разрешим ли стол?</h1>
+    <p class="lede">Отметьте фишки, которые лежат на столе. Программа проверит, можно ли
+      разложить их <em>все без остатка</em> на ряды и группы, и покажет саму раскладку.</p>
+  </header>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Фишки на столе</h2>
+      <p class="hint">Клик — добавить фишку, второй клик — вторую копию.
+        Правый клик или <kbd>Shift</kbd>+клик — убрать.</p>
+    </div>
+    <div class="rack">
+      <div class="rack-inner" id="rack"></div>
+    </div>
+    <div class="rack-foot">
+      <div id="jokers"></div>
+      <p class="hint">Джокер заменяет любую фишку. В наборе их два.</p>
+    </div>
+  </section>
+
+  <div class="bar">
+    <div class="tally"><b id="count">0</b> <span class="sub" id="countWord">фишек на столе</span></div>
+    <button class="act" id="btnRandom">Случайный расклад</button>
+    <button class="act" id="btnClear">Очистить</button>
+    <button class="act primary" id="btnSolve" disabled>Решить</button>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Раскладка</h2>
+      <div class="verdict">
+        <span class="chip idle" id="chip">Стол пуст</span>
+        <span class="meta" id="meta"></span>
+      </div>
+    </div>
+    <div class="felt" id="felt">
+      <p class="empty">Отметьте фишки выше и нажмите «Решить».</p>
+    </div>
+  </section>
+
+  <footer>
+    <p><b>Ряд</b> — три и более фишки одного цвета с подряд идущими числами (без перехода
+      с 13 на 1). <b>Группа</b> — три или четыре фишки одного числа, все разных цветов.
+      Стол разрешим, если каждая фишка попала в какой-нибудь набор.</p>
+    <p>Алгоритм — динамика по числам 1…13 с состоянием «сколько незакрытых рядов каждого
+      цвета оканчивается на предыдущем числе»; тот же код есть на Python
+      в <code>rummikub_solver.py</code>.</p>
+  </footer>
+
+</div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   Решатель. Порт rummikub_solver.py: динамика по числам 1..13, состояние —
+   (r1,r2,r3) на каждый цвет = сколько незакрытых рядов длины 1 / 2 / >=3
+   оканчивается на предыдущем числе, плюс остаток джокеров.
+   Фишка = [число, цвет], джокер = [0, 0].
+   ========================================================================== */
+const RK = (function () {
+  const COLORS = ["о", "ч", "к", "с"];
+  const CIDX = {"о": 0, "ч": 1, "к": 2, "с": 3};
+  const NC = 4, MINV = 1, MAXV = 13;
+
+  function combinations(arr, k) {          // все сочетания длины k
+    const res = [];
+    (function pick(start, acc) {
+      if (acc.length === k) { res.push(acc.slice()); return; }
+      for (let i = start; i < arr.length; i++) { acc.push(arr[i]); pick(i + 1, acc); acc.pop(); }
+    })(0, []);
+    return res;
+  }
+
+  /* --- группы одного числа: t[i] настоящих фишек цвета i и ровно g джокеров --- */
+  const groupMemo = new Map();
+  function groups(t, g) {
+    const key = t.join(",") + "|" + g;
+    if (groupMemo.has(key)) return groupMemo.get(key);
+    let res = null;
+    const total = t[0] + t[1] + t[2] + t[3];
+    if (total === 0) {
+      if (g === 0) res = [];
+      else for (const size of [3, 4]) {     // остались одни джокеры
+        if (g >= size) {
+          const rest = groups(t, g - size);
+          if (rest) { res = [[[], size]].concat(rest); break; }
+        }
+      }
+    } else {
+      let c0 = 0;                            // самый «дефицитный» цвет — в текущую группу
+      for (let i = 1; i < NC; i++) if (t[i] > t[c0]) c0 = i;
+      const others = [];
+      for (let i = 0; i < NC; i++) if (t[i] > 0 && i !== c0) others.push(i);
+      search:
+      for (const size of [3, 4]) {
+        const kmax = Math.min(size, others.length + 1);
+        for (let k = 1; k <= kmax; k++) {
+          const jj = size - k;
+          if (jj > g) continue;
+          for (const extra of combinations(others, k - 1)) {
+            const S = [c0].concat(extra).sort((a, b) => a - b);
+            const nt = t.slice();
+            for (const i of S) nt[i]--;
+            const rest = groups(nt, g - jj);
+            if (rest) { res = [[S, jj]].concat(rest); break search; }
+          }
+        }
+      }
+    }
+    groupMemo.set(key, res);
+    return res;
+  }
+
+  const byLeftMemo = new Map();
+  function groupsByLeft(left, gmax) {       // допустимые g по возрастанию
+    const key = left.join(",") + "|" + gmax;
+    let hit = byLeftMemo.get(key);
+    if (hit) return hit;
+    hit = [];
+    for (let g = 0; g <= gmax; g++) {
+      const gr = groups(left, g);
+      if (gr) hit.push([g, gr]);
+    }
+    byLeftMemo.set(key, hit);
+    return hit;
+  }
+
+  function makeSolver(cnt, jokers) {
+    const maxr = [];
+    for (let ci = 0; ci < NC; ci++) {
+      let m = 0;
+      for (let v = MINV; v <= MAXV; v++) m = Math.max(m, cnt[v][ci]);
+      maxr.push(m + jokers);
+    }
+    const memo = new Map(), optMemo = new Map();
+
+    // варианты для одного цвета при числе v
+    function colorOpts(ci, v, r1, r2, r3, javail) {
+      const key = ci + "," + v + "," + r1 + "," + r2 + "," + r3 + "," + javail;
+      let hit = optMemo.get(key);
+      if (hit) return hit;
+      const a = cnt[v][ci], mx = maxr[ci];
+      hit = [];
+      for (let e3 = 0; e3 <= r3; e3++) {
+        const base = r1 + r2 + e3;            // столько рядов останется открытыми
+        if (base > mx) continue;
+        for (let s = 0; s + base <= mx; s++) {
+          const need = base + s;
+          if (need > a + javail) break;
+          const hi = Math.min(a, need), lo = Math.max(0, need - javail);
+          for (let real = hi; real >= lo; real--) {   // сначала без джокеров
+            hit.push({ns: [s, r1, r2 + e3], left: a - real, jok: need - real,
+                      dec: [e3, s, real, need - real]});
+          }
+        }
+      }
+      optMemo.set(key, hit);
+      return hit;
+    }
+
+    // переходы для числа v; разные раскладки, ведущие в одно состояние, склеиваем
+    function transitions(v, state, j) {
+      const out = new Map();
+      const s0 = state[0], s1 = state[1], s2 = state[2], s3 = state[3];
+      for (const o0 of colorOpts(0, v, s0[0], s0[1], s0[2], j)) {
+        const j0 = j - o0.jok;
+        for (const o1 of colorOpts(1, v, s1[0], s1[1], s1[2], j0)) {
+          const j1 = j0 - o1.jok;
+          for (const o2 of colorOpts(2, v, s2[0], s2[1], s2[2], j1)) {
+            const j2 = j1 - o2.jok;
+            for (const o3 of colorOpts(3, v, s3[0], s3[1], s3[2], j2)) {
+              const jl = j2 - o3.jok;
+              // остатки настоящих фишек обязаны уйти в группы этого числа
+              for (const [g, gr] of groupsByLeft([o0.left, o1.left, o2.left, o3.left], jokers)) {
+                if (g > jl) break;
+                const st = [o0.ns, o1.ns, o2.ns, o3.ns];
+                const key = st[0].join("") + st[1].join("") + st[2].join("") + st[3].join("") + ":" + (jl - g);
+                if (!out.has(key)) out.set(key, {state: st, j: jl - g,
+                                                 dec: [[o0.dec, o1.dec, o2.dec, o3.dec], gr]});
+              }
+            }
+          }
+        }
+      }
+      return out;
+    }
+
+    function dfs(v, state, j) {
+      if (v > MAXV) {
+        if (j !== 0) return null;                      // джокер остался без набора
+        for (let ci = 0; ci < NC; ci++)
+          if (state[ci][0] || state[ci][1]) return null; // недостроенный ряд
+        return [];
+      }
+      // отсечка: короткие ряды обязаны получить фишку числа v (ряды длины 1 — и v+1)
+      let needJ = 0;
+      const rv = cnt[v], rv1 = v < MAXV ? cnt[v + 1] : [0, 0, 0, 0];
+      for (let ci = 0; ci < NC; ci++) {
+        const r1 = state[ci][0], r2 = state[ci][1];
+        needJ += Math.max(0, r1 + r2 - rv[ci]) + Math.max(0, r1 - rv1[ci]);
+      }
+      if (needJ > j) return null;
+
+      const key = v + ":" + j + ":" + state[0].join("") + state[1].join("") + state[2].join("") + state[3].join("");
+      if (memo.has(key)) return memo.get(key);
+      memo.set(key, null);
+      const kids = Array.from(transitions(v, state, j).values()).sort((x, y) => y.j - x.j);
+      for (const kid of kids) {                        // сначала где джокеры целее
+        const rest = dfs(v + 1, kid.state, kid.j);
+        if (rest) { const r = [kid.dec].concat(rest); memo.set(key, r); return r; }
+      }
+      return null;
+    }
+
+    // восстановление наборов по сохранённым решениям
+    function buildRows(decisions) {
+      const rows = [];
+      const runs1 = [[], [], [], []], runs2 = [[], [], [], []], runs3 = [[], [], [], []];
+      decisions.forEach(function (step, idx) {
+        const v = MINV + idx, perColor = step[0], grs = step[1];
+        for (let ci = 0; ci < NC; ci++) {
+          const e3 = perColor[ci][0], s = perColor[ci][1], real = perColor[ci][2];
+          const keep3 = runs3[ci].slice(0, e3), closed = runs3[ci].slice(e3);
+          for (const run of closed) rows.push(run);     // готовые ряды
+          const started = [];
+          for (let i = 0; i < s; i++) started.push([]);
+          const targets = runs1[ci].concat(runs2[ci], keep3, started);
+          targets.forEach(function (run, k) { run.push(k < real ? [v, COLORS[ci]] : [0, 0]); });
+          const prev1 = runs1[ci], prev2 = runs2[ci];
+          runs1[ci] = started; runs2[ci] = prev1; runs3[ci] = prev2.concat(keep3);
+        }
+        for (const [S, jj] of grs) {
+          const row = S.map(i => [v, COLORS[i]]);
+          for (let i = 0; i < jj; i++) row.push([0, 0]);
+          rows.push(row);
+        }
+      });
+      for (let ci = 0; ci < NC; ci++) for (const run of runs3[ci]) rows.push(run);
+      return rows;
+    }
+
+    return {dfs: dfs, buildRows: buildRows};
+  }
+
+  /* --- разрешим ли стол: {ok, rows, ms} --- */
+  function solveTable(tiles) {
+    const cnt = [];
+    for (let v = 0; v <= MAXV; v++) cnt.push([0, 0, 0, 0]);
+    let jokers = 0;
+    for (const t of tiles) {
+      const v = t[0], c = t[1];
+      if (v === 0) { jokers++; continue; }
+      if (v < MINV || v > MAXV || !(c in CIDX)) throw new Error("некорректная фишка: " + t);
+      cnt[v][CIDX[c]]++;
+    }
+    const t0 = performance.now();
+    if (!tiles.length) return {ok: true, rows: [], ms: 0};
+    const solver = makeSolver(cnt, jokers);
+    const decisions = solver.dfs(MINV, [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], jokers);
+    const rows = decisions ? solver.buildRows(decisions) : [];
+    return {ok: !!decisions, rows: rows, ms: performance.now() - t0};
+  }
+
+  /* --- независимая проверка ответа: каждый набор корректен, фишки те же --- */
+  function isValidSet(row) {
+    const n = row.length;
+    if (n < 3) return false;
+    const jok = row.filter(t => t[0] === 0).length;
+    const real = row.filter(t => t[0] !== 0);
+    if (n === 3 || n === 4) {                       // группа
+      const vals = new Set(real.map(t => t[0])), cols = new Set(real.map(t => t[1]));
+      if (vals.size <= 1 && cols.size === real.length) return true;
+    }
+    if (new Set(real.map(t => t[1])).size <= 1) {    // ряд
+      const vals = real.map(t => t[0]);
+      if (new Set(vals).size === vals.length) {
+        for (let start = MINV; start <= MAXV - n + 1; start++) {
+          if (vals.every(v => v >= start && v < start + n) && n - vals.length === jok) return true;
+        }
+      }
+    }
+    return false;
+  }
+  function verify(tiles, rows) {
+    if (!rows.every(isValidSet)) return false;
+    // "/" в ключе — чтобы число и цвет не склеивались и не зависели от типа (0 или "0")
+    const key = ts => ts.map(t => t[0] + "/" + t[1]).sort().join(" ");
+    return key([].concat.apply([], rows)) === key(tiles);
+  }
+
+  return {COLORS: COLORS, solveTable: solveTable, verify: verify, isValidSet: isValidSet};
+})();
+
+if (typeof module !== "undefined") module.exports = RK;   // для тестов в node
+
+/* ==========================================================================
+   Интерфейс
+   ========================================================================== */
+if (typeof document !== "undefined") (function () {
+  const COLORS = RK.COLORS;
+  const COLOR_NAME = {"о": "оранжевый", "ч": "чёрный", "к": "красный", "с": "синий"};
+  const COLOR_CLASS = {"о": "c-o", "ч": "c-ch", "к": "c-k", "с": "c-s"};
+  const MAXC = 2;                                     // копий каждой фишки в наборе
+  const fmtMs = ms => ms < 1 ? "меньше 1 мс" : Math.round(ms) + " мс";
+
+  const counts = new Map();                           // "7к" -> 0..2, "J" -> 0..2
+  const keyOf = (v, c) => v === 0 ? "J" : v + c;
+
+  const el = id => document.getElementById(id);
+  const rack = el("rack"), jokerBox = el("jokers"), felt = el("felt");
+  const chip = el("chip"), meta = el("meta"), tally = el("count"), tallyWord = el("countWord");
+  const btnSolve = el("btnSolve");
+
+  const SMILEY = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"' +
+    ' stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9.2"/>' +
+    '<path d="M8.4 14.6c.9 1.2 2.1 1.8 3.6 1.8s2.7-.6 3.6-1.8"/>' +
+    '<path d="M9 9.4v.1M15 9.4v.1"/></svg>';
+
+  /* --- одна фишка --- */
+  function tileNode(v, c, opts) {
+    opts = opts || {};
+    const b = document.createElement(opts.static ? "div" : "button");
+    b.className = "tile " + (v === 0 ? "joker " + COLOR_CLASS["к"] : COLOR_CLASS[c]);
+    b.dataset.n = opts.static ? 1 : 0;
+    const face = document.createElement("span");
+    face.className = "face";
+    if (v === 0) {
+      face.innerHTML = '<span class="num">J</span>';
+      if (opts.sub) {
+        const s = document.createElement("span");
+        s.className = "sub";
+        s.textContent = opts.sub[0] + opts.sub[1];
+        s.style.color = "var(--tint)";
+        b.classList.remove(COLOR_CLASS["к"]);
+        b.classList.add(COLOR_CLASS[opts.sub[1]]);
+        face.appendChild(s);
+      } else {
+        face.querySelector(".num").insertAdjacentHTML("beforebegin", SMILEY);
+        face.querySelector(".num").remove();
+      }
+    } else {
+      face.innerHTML = '<span class="num">' + v + '</span><span class="dot"></span>';
+    }
+    b.appendChild(face);
+    if (!opts.static) {
+      const cnt = document.createElement("span");
+      cnt.className = "cnt";
+      b.appendChild(cnt);
+      b.type = "button";
+      b.dataset.v = v; b.dataset.c = c;
+      b.addEventListener("click", e => bump(v, c, e.shiftKey ? -1 : 1));
+      b.addEventListener("contextmenu", e => { e.preventDefault(); bump(v, c, -1); });
+    }
+    return b;
+  }
+
+  /* --- сборка полки --- */
+  for (const c of COLORS) {
+    const row = document.createElement("div");
+    row.className = "rack-row";
+    const tag = document.createElement("span");
+    tag.className = "row-tag " + COLOR_CLASS[c];
+    tag.textContent = c;
+    tag.title = COLOR_NAME[c];
+    row.appendChild(tag);
+    for (let v = 1; v <= 13; v++) row.appendChild(tileNode(v, c));
+    rack.appendChild(row);
+  }
+  jokerBox.appendChild(tileNode(0, 0));
+
+  /* --- состояние --- */
+  function bump(v, c, delta) {
+    const k = keyOf(v, c);
+    let n = (counts.get(k) || 0) + delta;
+    if (n > MAXC) n = 0;                              // клик по «двойке» снимает фишку
+    if (n < 0) n = 0;
+    counts.set(k, n);
+    syncTiles();
+    showLoose();
+  }
+  function tilesOnTable() {
+    const out = [];
+    for (const c of COLORS) for (let v = 1; v <= 13; v++)
+      for (let i = 0; i < (counts.get(keyOf(v, c)) || 0); i++) out.push([v, c]);
+    for (let i = 0; i < (counts.get("J") || 0); i++) out.push([0, 0]);
+    return out;
+  }
+  function syncTiles() {
+    let total = 0;
+    document.querySelectorAll("#rack .tile, #jokers .tile").forEach(function (b) {
+      const v = +b.dataset.v, c = b.dataset.c;
+      const n = counts.get(keyOf(v, c)) || 0;
+      total += n;
+      b.dataset.n = n;
+      b.querySelector(".cnt").textContent = n > 1 ? n : "";
+      const name = v === 0 ? "джокер" : v + " " + COLOR_NAME[c];
+      b.setAttribute("aria-label", name + ", на столе: " + n);
+    });
+    tally.textContent = total;
+    const forms = ["фишек", "фишка", "фишки"];
+    const t100 = total % 100, t10 = total % 10;
+    tallyWord.textContent = (t100 > 10 && t100 < 20 ? forms[0]
+      : t10 === 1 ? forms[1] : t10 >= 2 && t10 <= 4 ? forms[2] : forms[0]) + " на столе";
+    btnSolve.disabled = total === 0;
+    return total;
+  }
+
+  /* --- показ выбранных фишек до решения --- */
+  function showLoose() {
+    const tiles = tilesOnTable();
+    setChip(tiles.length ? "idle" : "idle", tiles.length ? "Не проверено" : "Стол пуст");
+    meta.textContent = "";
+    felt.innerHTML = "";
+    if (!tiles.length) {
+      felt.innerHTML = '<p class="empty">Отметьте фишки выше и нажмите «Решить».</p>';
+      return;
+    }
+    const box = document.createElement("div");
+    box.className = "loose";
+    for (const t of tiles) box.appendChild(tileNode(t[0], t[1], {static: true}));
+    felt.appendChild(box);
+  }
+  function setChip(kind, text) { chip.className = "chip " + kind; chip.textContent = text; }
+
+  /* --- описание набора: «ряд · красный 5–9» или «группа · 7» --- */
+  function describe(row) {
+    const real = row.filter(t => t[0] !== 0);
+    const sameVal = new Set(real.map(t => t[0])).size <= 1 && row.length <= 4;
+    if (sameVal) {
+      const v = real.length ? real[0][0] : "?";
+      return {label: 'группа · <b>' + v + '</b>', tint: null, jokerSub: null};
+    }
+    const col = real[0][1];
+    const vals = real.map(t => t[0]);
+    let start = Math.min.apply(null, vals);
+    for (let s = 1; s <= 13 - row.length + 1; s++) {
+      if (vals.every(v => v >= s && v < s + row.length)) { start = s; break; }
+    }
+    return {
+      label: 'ряд · <b>' + COLOR_NAME[col] + '</b> ' + start + '–' + (start + row.length - 1),
+      tint: col, jokerSub: {start: start, col: col}
+    };
+  }
+
+  /* --- отрисовка решения --- */
+  function renderSolution(res) {
+    felt.innerHTML = "";
+    const wrapEl = document.createElement("div");
+    wrapEl.className = "sets";
+    res.rows.forEach(function (row, i) {
+      const d = describe(row);
+      const set = document.createElement("div");
+      set.className = "set" + (d.tint ? " " + COLOR_CLASS[d.tint] : "");
+      set.style.animationDelay = Math.min(i * 40, 400) + "ms";
+      const lab = document.createElement("div");
+      lab.className = "set-label";
+      lab.innerHTML = d.label;
+      const tiles = document.createElement("div");
+      tiles.className = "set-tiles";
+      row.forEach(function (t, pos) {
+        const sub = t[0] === 0 && d.jokerSub ? [d.jokerSub.start + pos, d.jokerSub.col] : null;
+        tiles.appendChild(tileNode(t[0], t[1], {static: true, sub: sub}));
+      });
+      set.appendChild(lab); set.appendChild(tiles);
+      wrapEl.appendChild(set);
+    });
+    felt.appendChild(wrapEl);
+  }
+
+  /* --- кнопки --- */
+  btnSolve.addEventListener("click", function () {
+    const tiles = tilesOnTable();
+    setChip("idle", "Считаю…");
+    meta.textContent = "";
+    btnSolve.disabled = true;
+    // небольшая задержка, чтобы браузер успел показать «Считаю…» до расчёта
+    setTimeout(function () {
+      let res;
+      try { res = RK.solveTable(tiles); }
+      catch (err) { setChip("no", "Ошибка"); meta.textContent = err.message; btnSolve.disabled = false; return; }
+      btnSolve.disabled = false;
+      if (res.ok) {
+        const n = res.rows.length;
+        const word = n % 10 === 1 && n % 100 !== 11 ? "набор"
+          : [2, 3, 4].includes(n % 10) && !(n % 100 >= 12 && n % 100 <= 14) ? "набора" : "наборов";
+        setChip("yes", "Разрешимо: " + n + " " + word);
+        meta.textContent = "решено за " + fmtMs(res.ms)
+          + (RK.verify(tiles, res.rows) ? " · раскладка проверена" : " · ОШИБКА ПРОВЕРКИ");
+        renderSolution(res);
+      } else {
+        setChip("no", "Не разрешимо");
+        meta.textContent = "все фишки в наборы не раскладываются · " + fmtMs(res.ms);
+        felt.innerHTML = "";
+        const box = document.createElement("div");
+        box.className = "loose";
+        for (const t of tiles) box.appendChild(tileNode(t[0], t[1], {static: true}));
+        const note = document.createElement("p");
+        note.className = "note";
+        note.textContent = "Хотя бы одна фишка остаётся без набора. Уберите или добавьте фишки и попробуйте снова.";
+        felt.appendChild(box); felt.appendChild(note);
+      }
+    }, 30);
+  });
+
+  el("btnClear").addEventListener("click", function () {
+    counts.clear(); syncTiles(); showLoose();
+  });
+
+  /* --- случайный расклад: складываем настоящие наборы, поэтому он разрешим --- */
+  el("btnRandom").addEventListener("click", function () {
+    counts.clear();
+    const used = new Map();
+    const free = t => (used.get(t) || 0) < (t === "J" ? 2 : MAXC);
+    const want = 3 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < want; i++) {
+      let cand;
+      if (Math.random() < 0.45) {                     // группа
+        const v = 1 + Math.floor(Math.random() * 13);
+        const cols = COLORS.slice().sort(() => Math.random() - 0.5)
+          .slice(0, Math.random() < 0.5 ? 3 : 4);
+        cand = cols.map(c => keyOf(v, c));
+      } else {                                        // ряд
+        const len = 3 + Math.floor(Math.random() * 3);
+        const start = 1 + Math.floor(Math.random() * (14 - len));
+        const c = COLORS[Math.floor(Math.random() * 4)];
+        cand = [];
+        for (let v = start; v < start + len; v++) cand.push(keyOf(v, c));
+      }
+      if (Math.random() < 0.3 && free("J")) {         // подменим фишку джокером
+        cand[Math.floor(Math.random() * cand.length)] = "J";
+      }
+      if (cand.every(free) && new Set(cand).size === cand.length) {
+        for (const k of cand) used.set(k, (used.get(k) || 0) + 1);
+      }
+    }
+    for (const [k, n] of used) counts.set(k, n);
+    syncTiles(); showLoose();
+  });
+
+  syncTiles(); showLoose();
+})();
+</script>
+</body>
+</html>
